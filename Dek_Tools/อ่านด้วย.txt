@@ -1,3 +1,0 @@
-1.ให้เอาไฟล์ Temp ไปไว้ใน AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup
-2.ต้องรัน Process_Kille ตอนเปิดด้วยที่อยู่ในไฟล์ 2.Tweaker
-3.ลง Install_Win11_Win10 ด้วยในไฟล์

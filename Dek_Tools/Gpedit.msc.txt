@@ -1,1 +1,0 @@
-FiveM_GTAPprocess.exe  gpupdate /force
