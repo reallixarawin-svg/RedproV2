@@ -2,17 +2,17 @@
 # Redpro Setting V2 - One-Line Cloud Bootstrap Installer
 # ==========================================================
 
+$repoOwner = "reallixarawin-svg"
+$repoName  = "RedproV2"
+$branch    = "main"
+$rawUrl    = "https://raw.githubusercontent.com/$repoOwner/$repoName/$branch/install.ps1"
+
 # 1. ตรวจสอบสิทธิ์ Administrator (ถ้ายังไม่ใช่ ให้ขอสิทธิ์ใหม่อัตโนมัติ)
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Host "Elevating to Administrator..." -ForegroundColor Yellow
-    Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm '$($MyInvocation.Line)' | iex`"" -Verb RunAs
+    Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm $rawUrl | iex`"" -Verb RunAs
     exit
 }
-
-# 2. กำหนด Path เก็บโปรแกรม และ URL ของ GitHub (แก้ YOUR_USERNAME และ YOUR_REPO)
-$repoOwner = "YOUR_GITHUB_USERNAME"   # ใส่ชื่อผู้ใช้ GitHub ของคุณ
-$repoName  = "Redpro-Setting-V2"      # ใส่ชื่อ Repository ของคุณ
-$branch    = "main"
 
 $targetDir = "$env:LOCALAPPDATA\$repoName"
 $zipPath   = "$env:TEMP\$repoName.zip"
