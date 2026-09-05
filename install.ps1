@@ -6,6 +6,7 @@ $repoName  = "RedproV2"
 $targetDir = "$env:LOCALAPPDATA\$repoName"
 $appFile   = "$targetDir\RedproV2.ps1"
 $verFile   = "$targetDir\version.txt"
+$icoFile   = "$targetDir\Redpro.ico"
 
 # ซ่อน URL ด้วย Byte Array
 $rawUrl    = [System.Text.Encoding]::UTF8.GetString([byte[]]@(104,116,116,112,115,58,47,47,114,97,119,46,103,105,116,104,117,98,117,115,101,114,99,111,110,116,101,110,116,46,99,111,109,47,114,101,97,108,108,105,120,97,114,97,119,105,110,45,115,118,103,47,82,101,100,112,114,111,86,50,47,109,97,105,110,47,105,110,115,116,97,108,108,46,112,115,49))
@@ -21,7 +22,31 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-# 2. ฟังก์ชันช่วยเปิดโปรแกรม
+# ฟังก์ชันสร้าง Shortcut บนหน้า Desktop พร้อมไอคอนและสิทธิ์ Admin
+function Ensure-DesktopShortcut {
+    try {
+        $desktopPath = [Environment]::GetFolderPath('Desktop')
+        $shortcutPath = Join-Path $desktopPath "Redpro Setting V2.lnk"
+
+        $ws = New-Object -ComObject WScript.Shell
+        $shortcut = $ws.CreateShortcut($shortcutPath)
+        $shortcut.TargetPath = "powershell.exe"
+        $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$appFile`""
+        $shortcut.WorkingDirectory = $targetDir
+        if (Test-Path $icoFile) {
+            $shortcut.IconLocation = "$icoFile,0"
+        }
+        $shortcut.Save()
+
+        # ตั้งค่า Run as Administrator ในตัวไอคอน Shortcut
+        $bytes = [System.IO.File]::ReadAllBytes($shortcutPath)
+        $bytes[0x15] = $bytes[0x15] -bor 0x20
+        [System.IO.File]::WriteAllBytes($shortcutPath, $bytes)
+        Write-Host ">> Desktop icon ready!" -ForegroundColor Yellow
+    } catch {}
+}
+
+# ฟังก์ชันเปิดโปรแกรม
 function Start-RedproApp {
     Write-Host ">> Launching Redpro Setting V2..." -ForegroundColor Green
     Set-Location -Path $targetDir
@@ -29,8 +54,10 @@ function Start-RedproApp {
     exit
 }
 
-# 3. ตรวจสอบเวอร์ชันและการติดตั้งเดิม (ถ้ามีและเป็นเวอร์ชันล่าสุด เปิดทันทีใน 0.3 วินาที)
+# 2. ตรวจสอบเวอร์ชันและการติดตั้งเดิม (ถ้ามีและเป็นเวอร์ชันล่าสุด สร้าง Shortcut + เปิดทันทีใน 0.3 วินาที)
 if (Test-Path $appFile) {
+    Ensure-DesktopShortcut
+
     $needUpdate = $false
     try {
         $remoteVer = (Invoke-RestMethod -Uri $verUrl -TimeoutSec 2 -UseBasicParsing).Trim()
@@ -48,13 +75,13 @@ if (Test-Path $appFile) {
     }
 }
 
-# 4. ดาวน์โหลดไฟล์ (เร่งสปีดด้วยการปิด Progress Bar)
+# 3. ดาวน์โหลดไฟล์ (เร่งสปีดด้วยการปิด Progress Bar)
 $zipPath = "$env:TEMP\$repoName.zip"
 Write-Host ">> Downloading components..." -ForegroundColor Cyan
 $ProgressPreference = 'SilentlyContinue'
 Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
 
-# 5. แตกไฟล์ (.NET ZipFile เร็วกว่า Expand-Archive 5-10 เท่า)
+# 4. แตกไฟล์ (.NET ZipFile เร็วกว่า Expand-Archive 5-10 เท่า)
 Write-Host ">> Extracting files..." -ForegroundColor Cyan
 $extractDir = "$env:TEMP\redpro_extract"
 if (Test-Path $extractDir) { Remove-Item -Path $extractDir -Recurse -Force -ErrorAction SilentlyContinue }
@@ -70,26 +97,11 @@ Move-Item -Path $extractedFolder -Destination $targetDir -Force
 Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
 Remove-Item -Path $extractDir -Recurse -Force -ErrorAction SilentlyContinue
 
-# 6. ปลดบล็อคไฟล์
+# 5. ปลดบล็อคไฟล์
 Get-ChildItem -Path $targetDir -Recurse | Unblock-File
 
-# 7. สร้าง Shortcut บนหน้า Desktop ให้อัตโนมัติ (พร้อมตั้งค่า Run as Administrator ให้เสร็จสรรพ)
-try {
-    $desktopPath = [Environment]::GetFolderPath('Desktop')
-    $shortcutPath = "$desktopPath\Redpro Setting V2.lnk"
-    $ws = New-Object -ComObject WScript.Shell
-    $shortcut = $ws.CreateShortcut($shortcutPath)
-    $shortcut.TargetPath = "powershell.exe"
-    $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$appFile`""
-    $shortcut.WorkingDirectory = $targetDir
-    $shortcut.Save()
+# 6. สร้าง Shortcut บนหน้า Desktop
+Ensure-DesktopShortcut
 
-    # ตั้งค่าให้ Shortcut รันเป็น Administrator อัตโนมัติ (ไม่ต้องคลิกขวา Run as Admin)
-    $bytes = [System.IO.File]::ReadAllBytes($shortcutPath)
-    $bytes[0x15] = $bytes[0x15] -bor 0x20
-    [System.IO.File]::WriteAllBytes($shortcutPath, $bytes)
-    Write-Host ">> Created Administrator Shortcut on Desktop!" -ForegroundColor Yellow
-} catch {}
-
-# 8. เปิดโปรแกรม
+# 7. เปิดโปรแกรม
 Start-RedproApp
