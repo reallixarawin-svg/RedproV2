@@ -1136,7 +1136,7 @@ $xaml = @"
                                 </Button.Template>
                             </Button>
                             
-                            <TextBlock Foreground="#6B7280" FontSize="11" HorizontalAlignment="Center" Text="Enter your KeyAuth license key to activate."/>
+                            <TextBlock Foreground="#6B7280" FontSize="11" HorizontalAlignment="Center" Text="Enter your license key to activate."/>
                         </StackPanel>
                         
                         <!-- View: Register -->
@@ -1774,14 +1774,10 @@ $window.FindName("BtnToggleRegPassConfirm").Add_Unchecked({
 
 $window.FindName("BtnLogin").Add_Click({
     $authMessage.Foreground = "#ffffff"
-    $authMessage.Text = "Connecting to KeyAuth..."
+    $authMessage.Text = "Checking license..."
     
-    # KeyAuth Credentials
-    $keyauth_name = "RobloxPJ"
-    $keyauth_owner = "KEynK37kby"
-    $keyauth_ver = "1.0"
-    $keyauth_secret = "297feb89ad8f1fc22a6cafddbb679add81496feb26165bcbc54e8edc06dc0642"
-    $keyauth_url = "https://keyauth.win/api/1.3/"
+    # Cloudflare Worker Custom Auth URL
+    $custom_auth_url = "https://redpro-auth.reallixarawin.workers.dev"
     
     $key = if ($window.FindName("TxtLoginPasswordVisible").Visibility -eq "Visible") { $window.FindName("TxtLoginPasswordVisible").Text } else { $window.FindName("TxtLoginPassword").Password }
     
@@ -1793,23 +1789,10 @@ $window.FindName("BtnLogin").Add_Click({
     $key = $key.Trim()
     
     try {
-        # 1. Initialize session
-        $initUri = "${keyauth_url}?type=init&ver=${keyauth_ver}&name=${keyauth_name}&ownerid=${keyauth_owner}&hash=${keyauth_secret}"
-        $initResp = Invoke-RestMethod -Uri $initUri -Method Get
-        
-        if ($initResp.success -ne $true) {
-            $authMessage.Foreground = "#ff4444"
-            $authMessage.Text = "Initialization failed: $($initResp.message)"
-            return
-        }
-        
-        $sessionid = $initResp.sessionid
-        
-        # 2. Authenticate License Key
         $escapedKey = [uri]::EscapeDataString($key)
         $escapedHwid = [uri]::EscapeDataString($hwid)
-        $loginUri = "${keyauth_url}?type=license&key=${escapedKey}&sessionid=${sessionid}&name=${keyauth_name}&ownerid=${keyauth_owner}&hwid=${escapedHwid}"
-        $loginResp = Invoke-RestMethod -Uri $loginUri -Method Get
+        $verifyUri = "${custom_auth_url}/verify?key=${escapedKey}&hwid=${escapedHwid}"
+        $loginResp = Invoke-RestMethod -Uri $verifyUri -Method Get -TimeoutSec 10
         
         if ($loginResp.success -eq $true) {
             # Save the valid key locally for auto-fill next time
@@ -1822,12 +1805,12 @@ $window.FindName("BtnLogin").Add_Click({
             $mainAppContainer.Visibility = "Visible"
             $authMessage.Text = ""
         } else {
-            $authMessage.Foreground = "#ffffff"
+            $authMessage.Foreground = "#ff4444"
             $authMessage.Text = $loginResp.message
         }
     } catch {
-        $authMessage.Foreground = "#ffffff"
-        $authMessage.Text = "Error: $_"
+        $authMessage.Foreground = "#ff4444"
+        $authMessage.Text = "Connection error: $_"
     }
 })
 
