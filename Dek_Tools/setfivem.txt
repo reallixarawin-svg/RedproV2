@@ -1,0 +1,32 @@
+net_mtu 1472
+cl_interp_ratio 1
+cl_interp 0
+net_thread_priority 1
+voice_sample_rate 24000
+cl_forceStreamingPrefetch 0
+r_textureStreaming 0
+DisableLauncher=true
+DisableShadowOptimizations=false
+EnablePresentationOptimizations=true
+ForceRenderAheadLimit=1
+DisableNvLowLatency=false
+SwapChainUseWaitableSwapChain=true
+MaxStreamingRequests=50
+MaxStreamingMemory=2000 
+StreamerMode=0
+DisableNVSP=0
+
+
+ipconfig
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces
+TcpAckFrequency = 1
+TCPNoDelay = 1
+
+
+netsh int tcp set global timestamps=disabled
+netsh int tcp set global ecncapability=disabled
+
+bcdedit /set disabledynamictick yes  
+bcdedit /deletevalue disabledynamictick ถ้าไม่ดี เอากลับ
+ 
+%appdata%\CitizenFX ใส่ UpdateChannel=production ใน fivem.cfg
