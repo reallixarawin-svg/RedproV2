@@ -2,6 +2,8 @@
 # Redpro Setting V2 - Fast Bootstrap Installer & Launcher
 # ==========================================================
 
+$ErrorActionPreference = 'Stop'
+
 $repoName  = "RedproV2"
 $targetDir = "$env:LOCALAPPDATA\$repoName"
 $appFile   = "$targetDir\RedproV2.ps1"
@@ -16,7 +18,11 @@ $verUrl    = [System.Text.Encoding]::UTF8.GetString([byte[]]@(104,116,116,112,11
 # 1. ตรวจสอบสิทธิ์ Administrator
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Host "Elevating to Administrator..." -ForegroundColor Yellow
-    Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm $rawUrl | iex`"" -Verb RunAs
+    if ($PSCommandPath) {
+        Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+    } else {
+        Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm $rawUrl | iex`"" -Verb RunAs
+    }
     exit
 }
 
@@ -54,26 +60,32 @@ function Start-RedproApp {
     exit
 }
 
-# 2. ตรวจสอบเวอร์ชันและการติดตั้งเดิม (ถ้ามีและเป็นเวอร์ชันล่าสุด สร้าง Shortcut + เปิดทันทีใน 0.3 วินาที)
-if (Test-Path $appFile) {
-    Ensure-DesktopShortcut
-
-    $needUpdate = $false
-    try {
-        $remoteVer = (Invoke-RestMethod -Uri $verUrl -TimeoutSec 2 -UseBasicParsing).Trim()
-        $localVer  = if (Test-Path $verFile) { (Get-Content -Path $verFile -Raw).Trim() } else { "1.0.0" }
-        if ($remoteVer -and ($remoteVer -ne $localVer)) {
-            Write-Host ">> Found new update: v$remoteVer (Current: v$localVer)" -ForegroundColor Yellow
-            $needUpdate = $true
-        }
-    } catch {
-        # ถ้าไม่มีเน็ตหรือเช็คไม่ได้ ให้เปิดโปรแกรมในเครื่องทันที
+# 2. Always remove the previous installation before downloading and launching.
+function Remove-PreviousRedproInstallation {
+    if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+        throw 'LOCALAPPDATA is unavailable. Installation stopped.'
     }
-
-    if (-not $needUpdate) {
-        Start-RedproApp
+    $localRoot = [IO.Path]::GetFullPath($env:LOCALAPPDATA).TrimEnd('\')
+    $expectedTarget = [IO.Path]::GetFullPath((Join-Path $localRoot 'RedproV2'))
+    $resolvedTarget = [IO.Path]::GetFullPath($targetDir).TrimEnd('\')
+    if (-not [string]::Equals($resolvedTarget, $expectedTarget, [StringComparison]::OrdinalIgnoreCase) -or
+        -not [string]::Equals([IO.Path]::GetDirectoryName($resolvedTarget), $localRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Unexpected installation path. Cleanup stopped.'
+    }
+    if (Test-Path -LiteralPath $resolvedTarget) {
+        $existing = Get-Item -LiteralPath $resolvedTarget -Force -ErrorAction Stop
+        if ($existing.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw 'RedproV2 is a linked path. Cleanup stopped.'
+        }
+        Write-Host '>> Removing previous RedproV2 installation...' -ForegroundColor Yellow
+        Remove-Item -LiteralPath $resolvedTarget -Recurse -Force -ErrorAction Stop
+        if (Test-Path -LiteralPath $resolvedTarget) {
+            throw 'Could not remove the previous installation. Close RedproV2 and retry.'
+        }
     }
 }
+
+Remove-PreviousRedproInstallation
 
 # 3. ดาวน์โหลดไฟล์ (เร่งสปีดด้วยการปิด Progress Bar)
 $zipPath = "$env:TEMP\$repoName.zip"
@@ -89,7 +101,7 @@ if (Test-Path $extractDir) { Remove-Item -Path $extractDir -Recurse -Force -Erro
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $extractDir)
 
-if (Test-Path $targetDir) { Remove-Item -Path $targetDir -Recurse -Force -ErrorAction SilentlyContinue }
+if (Test-Path -LiteralPath $targetDir) { throw 'Installation directory reappeared. Close other installers and retry.' }
 $extractedFolder = Join-Path $extractDir "$repoName-main"
 Move-Item -Path $extractedFolder -Destination $targetDir -Force
 
