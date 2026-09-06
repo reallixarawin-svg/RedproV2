@@ -7,6 +7,7 @@ $targetDir = "$env:LOCALAPPDATA\$repoName"
 $appFile   = "$targetDir\RedproV2.ps1"
 $verFile   = "$targetDir\version.txt"
 $icoFile   = "$targetDir\Redpro.ico"
+$dddFile   = "$targetDir\ddd.jpg"
 
 # URLs encoded as Byte Arrays
 $rawUrl = [System.Text.Encoding]::UTF8.GetString(
