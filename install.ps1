@@ -8,10 +8,7 @@ $appFile   = "$targetDir\RedproV2.ps1"
 $verFile   = "$targetDir\version.txt"
 $icoFile   = "$targetDir\Redpro.ico"
 
-# ==========================================================
 # URLs encoded as Byte Arrays
-# ==========================================================
-
 $rawUrl = [System.Text.Encoding]::UTF8.GetString(
     [byte[]]@(
         104,116,116,112,115,58,47,47,114,97,119,46,103,105,116,104,117,98,
@@ -42,91 +39,51 @@ $verUrl = [System.Text.Encoding]::UTF8.GetString(
     )
 )
 
-
 # ==========================================================
 # 1. Check Administrator
 # ==========================================================
 
 $currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
-
-$currentPrincipal = New-Object Security.Principal.WindowsPrincipal(
-    $currentIdentity
-)
+$currentPrincipal = New-Object Security.Principal.WindowsPrincipal($currentIdentity)
 
 $isAdmin = $currentPrincipal.IsInRole(
     [Security.Principal.WindowsBuiltInRole]::Administrator
 )
 
 if (-not $isAdmin) {
-
     Write-Host "Elevating to Administrator..." -ForegroundColor Yellow
 
-    Start-Process `
-        -FilePath "powershell.exe" `
+    Start-Process powershell.exe `
         -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm '$rawUrl' | iex`"" `
         -Verb RunAs
 
     exit
 }
 
-
-# ==========================================================
 # TLS 1.2
-# ==========================================================
-
-[Net.ServicePointManager]::SecurityProtocol = `
-    [Net.SecurityProtocolType]::Tls12
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 
 # ==========================================================
-# Function: Hide Redpro
+# Function: Hide installation folder normally
 #
 # Hidden ONLY
 # No System attribute
+# No attrib.exe
 # ==========================================================
 
-function Hide-RedproFiles {
-
-    if (-not (Test-Path -LiteralPath $targetDir)) {
-        return
-    }
-
+function Hide-RedproFolder {
     try {
+        if (Test-Path -LiteralPath $targetDir) {
+            $folder = Get-Item -LiteralPath $targetDir -Force
 
-        # Hide root folder
-        & attrib.exe +h "$targetDir" 2>$null
-
-        # Hide all files/folders inside
-        & attrib.exe +h "$targetDir\*" /s /d 2>$null
+            $folder.Attributes = (
+                $folder.Attributes -bor [System.IO.FileAttributes]::Hidden
+            )
+        }
     }
     catch {
-        # Ignore attribute errors
-    }
-}
-
-
-# ==========================================================
-# Function: Unhide Redpro
-#
-# Used before update/delete
-# ==========================================================
-
-function Unhide-RedproFiles {
-
-    if (-not (Test-Path -LiteralPath $targetDir)) {
-        return
-    }
-
-    try {
-
-        # Unhide contents first
-        & attrib.exe -h "$targetDir\*" /s /d 2>$null
-
-        # Unhide root folder
-        & attrib.exe -h "$targetDir" 2>$null
-    }
-    catch {
-        # Ignore attribute errors
+        # Hiding failure should not stop the program
     }
 }
 
@@ -136,17 +93,11 @@ function Unhide-RedproFiles {
 # ==========================================================
 
 function Ensure-DesktopShortcut {
-
     try {
-
         $desktopPath = [Environment]::GetFolderPath("Desktop")
-
-        $shortcutPath = Join-Path `
-            $desktopPath `
-            "Redpro Setting V2.lnk"
+        $shortcutPath = Join-Path $desktopPath "Redpro Setting V2.lnk"
 
         $ws = New-Object -ComObject WScript.Shell
-
         $shortcut = $ws.CreateShortcut($shortcutPath)
 
         $shortcut.TargetPath = "powershell.exe"
@@ -162,19 +113,11 @@ function Ensure-DesktopShortcut {
 
         $shortcut.Save()
 
-
-        # ==================================================
-        # Shortcut -> Run as Administrator
-        # ==================================================
-
+        # Set shortcut to Run as Administrator
         if (Test-Path -LiteralPath $shortcutPath) {
-
-            $bytes = [System.IO.File]::ReadAllBytes(
-                $shortcutPath
-            )
+            $bytes = [System.IO.File]::ReadAllBytes($shortcutPath)
 
             if ($bytes.Length -gt 0x15) {
-
                 $bytes[0x15] = $bytes[0x15] -bor 0x20
 
                 [System.IO.File]::WriteAllBytes(
@@ -184,42 +127,31 @@ function Ensure-DesktopShortcut {
             }
         }
 
-        Write-Host `
-            ">> Desktop icon ready!" `
-            -ForegroundColor Yellow
+        Write-Host ">> Desktop icon ready!" -ForegroundColor Yellow
     }
     catch {
-
-        Write-Host `
-            ">> Could not create Desktop shortcut." `
+        Write-Host ">> Could not create Desktop shortcut." `
             -ForegroundColor DarkYellow
     }
 }
 
 
 # ==========================================================
-# Function: Start Redpro
+# Function: Launch Redpro
 # ==========================================================
 
 function Start-RedproApp {
-
     if (-not (Test-Path -LiteralPath $appFile)) {
-
-        Write-Host `
-            ">> RedproV2.ps1 not found." `
-            -ForegroundColor Red
-
+        Write-Host ">> RedproV2.ps1 not found." -ForegroundColor Red
         exit 1
     }
 
-    Write-Host `
-        ">> Launching Redpro Setting V2..." `
+    Write-Host ">> Launching Redpro Setting V2..." `
         -ForegroundColor Green
 
     Set-Location -LiteralPath $targetDir
 
-    Start-Process `
-        -FilePath "powershell.exe" `
+    Start-Process powershell.exe `
         -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$appFile`""
 
     exit
@@ -232,16 +164,14 @@ function Start-RedproApp {
 
 if (Test-Path -LiteralPath $appFile) {
 
-    # Make sure shortcut exists
     Ensure-DesktopShortcut
 
-    # Keep installed files hidden
-    Hide-RedproFiles
+    # Keep installation folder hidden normally
+    Hide-RedproFolder
 
     $needUpdate = $false
 
     try {
-
         $remoteVer = (
             Invoke-RestMethod `
                 -Uri $verUrl `
@@ -249,9 +179,7 @@ if (Test-Path -LiteralPath $appFile) {
                 -UseBasicParsing
         ).ToString().Trim()
 
-
         if (Test-Path -LiteralPath $verFile) {
-
             $localVer = (
                 Get-Content `
                     -LiteralPath $verFile `
@@ -259,16 +187,13 @@ if (Test-Path -LiteralPath $appFile) {
             ).Trim()
         }
         else {
-
             $localVer = "1.0.0"
         }
-
 
         if (
             -not [string]::IsNullOrWhiteSpace($remoteVer) -and
             ($remoteVer -ne $localVer)
         ) {
-
             Write-Host `
                 ">> Found new update: v$remoteVer (Current: v$localVer)" `
                 -ForegroundColor Yellow
@@ -277,15 +202,12 @@ if (Test-Path -LiteralPath $appFile) {
         }
     }
     catch {
-
-        # If offline/version check failed,
-        # launch installed version.
+        # If version check fails/offline,
+        # launch the currently installed version.
         $needUpdate = $false
     }
 
-
     if (-not $needUpdate) {
-
         Start-RedproApp
     }
 }
@@ -295,30 +217,20 @@ if (Test-Path -LiteralPath $appFile) {
 # 3. Download Repository ZIP
 # ==========================================================
 
-$zipPath = Join-Path `
-    $env:TEMP `
-    "$repoName.zip"
+$zipPath = "$env:TEMP\$repoName.zip"
 
-Write-Host `
-    ">> Downloading components..." `
-    -ForegroundColor Cyan
-
+Write-Host ">> Downloading components..." -ForegroundColor Cyan
 
 $ProgressPreference = "SilentlyContinue"
 
-
-# Delete old ZIP if present
 if (Test-Path -LiteralPath $zipPath) {
-
     Remove-Item `
         -LiteralPath $zipPath `
         -Force `
         -ErrorAction SilentlyContinue
 }
 
-
 try {
-
     Invoke-WebRequest `
         -Uri $zipUrl `
         -OutFile $zipPath `
@@ -326,15 +238,8 @@ try {
         -ErrorAction Stop
 }
 catch {
-
-    Write-Host `
-        ">> Download failed." `
-        -ForegroundColor Red
-
-    Write-Host `
-        $_.Exception.Message `
-        -ForegroundColor DarkRed
-
+    Write-Host ">> Download failed." -ForegroundColor Red
+    Write-Host $_.Exception.Message -ForegroundColor DarkRed
     exit 1
 }
 
@@ -343,19 +248,11 @@ catch {
 # 4. Extract ZIP
 # ==========================================================
 
-Write-Host `
-    ">> Extracting files..." `
-    -ForegroundColor Cyan
+Write-Host ">> Extracting files..." -ForegroundColor Cyan
 
+$extractDir = "$env:TEMP\redpro_extract"
 
-$extractDir = Join-Path `
-    $env:TEMP `
-    "redpro_extract"
-
-
-# Clean previous extraction
 if (Test-Path -LiteralPath $extractDir) {
-
     Remove-Item `
         -LiteralPath $extractDir `
         -Recurse `
@@ -363,19 +260,14 @@ if (Test-Path -LiteralPath $extractDir) {
         -ErrorAction SilentlyContinue
 }
 
-
 try {
-
     New-Item `
         -ItemType Directory `
         -Path $extractDir `
         -Force |
     Out-Null
 
-
-    Add-Type `
-        -AssemblyName System.IO.Compression.FileSystem
-
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
 
     [System.IO.Compression.ZipFile]::ExtractToDirectory(
         $zipPath,
@@ -383,14 +275,13 @@ try {
     )
 }
 catch {
+    Write-Host ">> Extraction failed." -ForegroundColor Red
+    Write-Host $_.Exception.Message -ForegroundColor DarkRed
 
-    Write-Host `
-        ">> Extraction failed." `
-        -ForegroundColor Red
-
-    Write-Host `
-        $_.Exception.Message `
-        -ForegroundColor DarkRed
+    Remove-Item `
+        -LiteralPath $zipPath `
+        -Force `
+        -ErrorAction SilentlyContinue
 
     exit 1
 }
@@ -398,15 +289,13 @@ catch {
 
 # ==========================================================
 # 5. Remove Old Installation
+#
+# Remove-Item -Force can remove normal Hidden folders.
+# No need to unhide it first.
 # ==========================================================
 
 if (Test-Path -LiteralPath $targetDir) {
-
-    # Remove Hidden attribute first
-    Unhide-RedproFiles
-
     try {
-
         Remove-Item `
             -LiteralPath $targetDir `
             -Recurse `
@@ -414,13 +303,11 @@ if (Test-Path -LiteralPath $targetDir) {
             -ErrorAction Stop
     }
     catch {
-
         Write-Host `
             ">> Could not remove old installation." `
             -ForegroundColor Red
 
-        Write-Host `
-            $_.Exception.Message `
+        Write-Host $_.Exception.Message `
             -ForegroundColor DarkRed
 
         exit 1
@@ -429,15 +316,13 @@ if (Test-Path -LiteralPath $targetDir) {
 
 
 # ==========================================================
-# Locate Extracted GitHub Folder
+# Locate Extracted Repository
 # ==========================================================
 
 $extractedFolder = Join-Path `
     $extractDir `
     "$repoName-main"
 
-
-# Fallback if GitHub directory name differs
 if (-not (Test-Path -LiteralPath $extractedFolder)) {
 
     $possibleFolder = Get-ChildItem `
@@ -447,14 +332,11 @@ if (-not (Test-Path -LiteralPath $extractedFolder)) {
     Select-Object -First 1
 
     if ($null -ne $possibleFolder) {
-
         $extractedFolder = $possibleFolder.FullName
     }
 }
 
-
 if (-not (Test-Path -LiteralPath $extractedFolder)) {
-
     Write-Host `
         ">> Extracted program folder was not found." `
         -ForegroundColor Red
@@ -468,7 +350,6 @@ if (-not (Test-Path -LiteralPath $extractedFolder)) {
 # ==========================================================
 
 try {
-
     Move-Item `
         -LiteralPath $extractedFolder `
         -Destination $targetDir `
@@ -476,13 +357,11 @@ try {
         -ErrorAction Stop
 }
 catch {
-
     Write-Host `
         ">> Installation failed while moving files." `
         -ForegroundColor Red
 
-    Write-Host `
-        $_.Exception.Message `
+    Write-Host $_.Exception.Message `
         -ForegroundColor DarkRed
 
     exit 1
@@ -498,7 +377,6 @@ Remove-Item `
     -Force `
     -ErrorAction SilentlyContinue
 
-
 Remove-Item `
     -LiteralPath $extractDir `
     -Recurse `
@@ -511,7 +389,6 @@ Remove-Item `
 # ==========================================================
 
 try {
-
     Get-ChildItem `
         -LiteralPath $targetDir `
         -Recurse `
@@ -519,7 +396,6 @@ try {
         -File `
         -ErrorAction SilentlyContinue |
     ForEach-Object {
-
         Unblock-File `
             -LiteralPath $_.FullName `
             -ErrorAction SilentlyContinue
@@ -534,7 +410,6 @@ catch {
 # ==========================================================
 
 if (-not (Test-Path -LiteralPath $appFile)) {
-
     Write-Host `
         ">> Installation completed, but RedproV2.ps1 was not found." `
         -ForegroundColor Red
@@ -544,12 +419,16 @@ if (-not (Test-Path -LiteralPath $appFile)) {
 
 
 # ==========================================================
-# 9. Hide Installed Files
+# 9. Hide installation folder normally
 #
-# Hidden attribute ONLY
+# File Explorer:
+# Hidden items OFF = RedproV2 not visible
+# Hidden items ON  = RedproV2 visible
+#
+# Only the RedproV2 root folder needs Hidden.
 # ==========================================================
 
-Hide-RedproFiles
+Hide-RedproFolder
 
 
 # ==========================================================
