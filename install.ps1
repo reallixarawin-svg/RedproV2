@@ -60,33 +60,6 @@ function Start-RedproApp {
     exit
 }
 
-# 2. Always remove the previous installation before downloading and launching.
-function Remove-PreviousRedproInstallation {
-    if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
-        throw 'LOCALAPPDATA is unavailable. Installation stopped.'
-    }
-    $localRoot = [IO.Path]::GetFullPath($env:LOCALAPPDATA).TrimEnd('\')
-    $expectedTarget = [IO.Path]::GetFullPath((Join-Path $localRoot 'RedproV2'))
-    $resolvedTarget = [IO.Path]::GetFullPath($targetDir).TrimEnd('\')
-    if (-not [string]::Equals($resolvedTarget, $expectedTarget, [StringComparison]::OrdinalIgnoreCase) -or
-        -not [string]::Equals([IO.Path]::GetDirectoryName($resolvedTarget), $localRoot, [StringComparison]::OrdinalIgnoreCase)) {
-        throw 'Unexpected installation path. Cleanup stopped.'
-    }
-    if (Test-Path -LiteralPath $resolvedTarget) {
-        $existing = Get-Item -LiteralPath $resolvedTarget -Force -ErrorAction Stop
-        if ($existing.Attributes -band [IO.FileAttributes]::ReparsePoint) {
-            throw 'RedproV2 is a linked path. Cleanup stopped.'
-        }
-        Write-Host '>> Removing previous RedproV2 installation...' -ForegroundColor Yellow
-        Remove-Item -LiteralPath $resolvedTarget -Recurse -Force -ErrorAction Stop
-        if (Test-Path -LiteralPath $resolvedTarget) {
-            throw 'Could not remove the previous installation. Close RedproV2 and retry.'
-        }
-    }
-}
-
-Remove-PreviousRedproInstallation
-
 # 3. ดาวน์โหลดไฟล์ (เร่งสปีดด้วยการปิด Progress Bar)
 $zipPath = "$env:TEMP\$repoName.zip"
 Write-Host ">> Downloading components..." -ForegroundColor Cyan
