@@ -133,7 +133,7 @@ Get-ChildItem -Path $targetDir -Recurse | Unblock-File
 # Hide the installation folder from the normal Explorer view.
 # This is cosmetic; it does not encrypt or protect the PowerShell source.
 $installedDirectory = Get-Item -LiteralPath $targetDir -Force -ErrorAction Stop
-$installedDirectory.Attributes = $installedDirectory.Attributes -bor [IO.FileAttributes]::Hidden
+$installedDirectory.Attributes = $installedDirectory.Attributes -bor [IO.FileAttributes]::Hidden -bor [IO.FileAttributes]::System
 
 # 6. สร้าง Shortcut บนหน้า Desktop
 Ensure-DesktopShortcut
