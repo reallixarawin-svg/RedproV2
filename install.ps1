@@ -8,7 +8,10 @@ $appFile   = "$targetDir\RedproV2.ps1"
 $verFile   = "$targetDir\version.txt"
 $icoFile   = "$targetDir\Redpro.ico"
 
-# ซ่อน URL ด้วย Byte Array
+# ==========================================================
+# URLs encoded as byte arrays
+# ==========================================================
+
 $rawUrl = [System.Text.Encoding]::UTF8.GetString(
     [byte[]]@(
         104,116,116,112,115,58,47,47,114,97,119,46,103,105,116,104,117,98,
@@ -40,64 +43,110 @@ $verUrl = [System.Text.Encoding]::UTF8.GetString(
 )
 
 # ==========================================================
-# 1. ตรวจสอบสิทธิ์ Administrator
+# 1. Check Administrator
 # ==========================================================
 
-if (-not (
-    [Security.Principal.WindowsPrincipal]
-    [Security.Principal.WindowsIdentity]::GetCurrent()
-).IsInRole(
-    [Security.Principal.WindowsBuiltInRole]::Administrator
-)) {
-    Write-Host "Elevating to Administrator..." -ForegroundColor Yellow
+$currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
 
-    Start-Process powershell.exe `
-        -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm $rawUrl | iex`"" `
+$currentPrincipal = New-Object `
+    Security.Principal.WindowsPrincipal($currentIdentity)
+
+$isAdmin = $currentPrincipal.IsInRole(
+    [Security.Principal.WindowsBuiltInRole]::Administrator
+)
+
+if (-not $isAdmin) {
+
+    Write-Host "Elevating to Administrator..." `
+        -ForegroundColor Yellow
+
+    $elevateArgs = @(
+        "-NoProfile"
+        "-ExecutionPolicy", "Bypass"
+        "-Command"
+        "irm '$rawUrl' | iex"
+    )
+
+    Start-Process `
+        -FilePath "powershell.exe" `
+        -ArgumentList $elevateArgs `
         -Verb RunAs
 
     exit
 }
+
+# ==========================================================
+# TLS
+# ==========================================================
 
 [Net.ServicePointManager]::SecurityProtocol = `
     [Net.SecurityProtocolType]::Tls12
 
 
 # ==========================================================
-# ฟังก์ชันซ่อน Redpro
-# ใช้ attrib +h +s
+# Function: Hide installed files
 # ==========================================================
 
 function Hide-RedproFiles {
 
-    if (-not (Test-Path $targetDir)) {
+    if (-not (Test-Path -LiteralPath $targetDir)) {
         return
     }
 
     try {
-        # ซ่อน root folder
-        & attrib.exe +h +s "$targetDir"
 
-        # ซ่อนไฟล์และโฟลเดอร์ทั้งหมดด้านใน
-        & attrib.exe +h +s "$targetDir\*" /s /d
+        # Root folder
+        & attrib.exe +h +s "$targetDir" 2>$null
 
-    } catch {
-        # ไม่ให้การซ่อนไฟล์ทำให้ Launcher หยุดทำงาน
+        # Everything inside
+        & attrib.exe +h +s "$targetDir\*" /s /d 2>$null
+
+    }
+    catch {
+        # Ignore attribute errors
     }
 }
 
 
 # ==========================================================
-# ฟังก์ชันสร้าง Shortcut บน Desktop
+# Function: Remove Hidden/System attributes
+# Used before update / delete
+# ==========================================================
+
+function Unhide-RedproFiles {
+
+    if (-not (Test-Path -LiteralPath $targetDir)) {
+        return
+    }
+
+    try {
+
+        & attrib.exe -h -s "$targetDir\*" /s /d 2>$null
+        & attrib.exe -h -s "$targetDir" 2>$null
+
+    }
+    catch {
+        # Ignore attribute errors
+    }
+}
+
+
+# ==========================================================
+# Function: Create Desktop Shortcut
 # ==========================================================
 
 function Ensure-DesktopShortcut {
 
     try {
 
-        $desktopPath  = [Environment]::GetFolderPath('Desktop')
-        $shortcutPath = Join-Path $desktopPath "Redpro Setting V2.lnk"
+        $desktopPath = [Environment]::GetFolderPath("Desktop")
+
+        $shortcutPath = Join-Path `
+            $desktopPath `
+            "Redpro Setting V2.lnk"
 
         $ws = New-Object -ComObject WScript.Shell
+
         $shortcut = $ws.CreateShortcut($shortcutPath)
 
         $shortcut.TargetPath = "powershell.exe"
@@ -107,62 +156,88 @@ function Ensure-DesktopShortcut {
 
         $shortcut.WorkingDirectory = $targetDir
 
-        if (Test-Path $icoFile) {
+        if (Test-Path -LiteralPath $icoFile) {
             $shortcut.IconLocation = "$icoFile,0"
         }
 
         $shortcut.Save()
 
-        # ตั้ง Shortcut ให้ Run as Administrator
-        $bytes = [System.IO.File]::ReadAllBytes($shortcutPath)
+        # Set Shortcut -> Run as Administrator
+        if (Test-Path -LiteralPath $shortcutPath) {
 
-        if ($bytes.Length -gt 0x15) {
-            $bytes[0x15] = $bytes[0x15] -bor 0x20
-
-            [System.IO.File]::WriteAllBytes(
-                $shortcutPath,
-                $bytes
+            $bytes = [System.IO.File]::ReadAllBytes(
+                $shortcutPath
             )
+
+            if ($bytes.Length -gt 0x15) {
+
+                $bytes[0x15] = `
+                    $bytes[0x15] -bor 0x20
+
+                [System.IO.File]::WriteAllBytes(
+                    $shortcutPath,
+                    $bytes
+                )
+            }
         }
 
-        Write-Host ">> Desktop icon ready!" `
+        Write-Host `
+            ">> Desktop icon ready!" `
             -ForegroundColor Yellow
+    }
+    catch {
 
-    } catch {
-
+        Write-Host `
+            ">> Could not create desktop shortcut." `
+            -ForegroundColor DarkYellow
     }
 }
 
 
 # ==========================================================
-# ฟังก์ชันเปิด Redpro
+# Function: Launch Redpro
 # ==========================================================
 
 function Start-RedproApp {
+
+    if (-not (Test-Path -LiteralPath $appFile)) {
+
+        Write-Host `
+            ">> RedproV2.ps1 not found." `
+            -ForegroundColor Red
+
+        return
+    }
 
     Write-Host `
         ">> Launching Redpro Setting V2..." `
         -ForegroundColor Green
 
-    Set-Location -Path $targetDir
+    Set-Location -LiteralPath $targetDir
 
-    Start-Process powershell.exe `
-        -ArgumentList `
-        "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$appFile`""
+    Start-Process `
+        -FilePath "powershell.exe" `
+        -ArgumentList @(
+            "-NoProfile"
+            "-ExecutionPolicy"
+            "Bypass"
+            "-WindowStyle"
+            "Hidden"
+            "-File"
+            "`"$appFile`""
+        )
 
     exit
 }
 
 
 # ==========================================================
-# 2. ตรวจสอบการติดตั้งเดิม + Version
+# 2. Check installed version
 # ==========================================================
 
-if (Test-Path $appFile) {
+if (Test-Path -LiteralPath $appFile) {
 
     Ensure-DesktopShortcut
-
-    # ตั้ง Hidden + System ทุกครั้ง
     Hide-RedproFiles
 
     $needUpdate = $false
@@ -172,19 +247,26 @@ if (Test-Path $appFile) {
         $remoteVer = (
             Invoke-RestMethod `
                 -Uri $verUrl `
-                -TimeoutSec 2 `
-                -UseBasicParsing
-        ).Trim()
+                -TimeoutSec 2
+        ).ToString().Trim()
 
-        $localVer = if (Test-Path $verFile) {
-            (Get-Content -Path $verFile -Raw).Trim()
+        if (Test-Path -LiteralPath $verFile) {
+
+            $localVer = (
+                Get-Content `
+                    -LiteralPath $verFile `
+                    -Raw
+            ).Trim()
+
         }
         else {
-            "1.0.0"
+
+            $localVer = "1.0.0"
         }
 
         if (
-            $remoteVer -and
+            -not [string]::IsNullOrWhiteSpace($remoteVer) `
+            -and
             ($remoteVer -ne $localVer)
         ) {
 
@@ -194,12 +276,12 @@ if (Test-Path $appFile) {
 
             $needUpdate = $true
         }
-
     }
     catch {
 
-        # ถ้าเช็ก Version ไม่ได้
-        # ใช้ตัวที่ติดตั้งอยู่ทันที
+        # Offline / version server unavailable
+        # Launch installed copy
+        $needUpdate = $false
     }
 
     if (-not $needUpdate) {
@@ -210,29 +292,46 @@ if (Test-Path $appFile) {
 
 
 # ==========================================================
-# 3. Download
+# 3. Download ZIP
 # ==========================================================
 
-$zipPath = "$env:TEMP\$repoName.zip"
+$zipPath = Join-Path `
+    $env:TEMP `
+    "$repoName.zip"
 
 Write-Host `
     ">> Downloading components..." `
     -ForegroundColor Cyan
 
-$ProgressPreference = 'SilentlyContinue'
+$ProgressPreference = "SilentlyContinue"
 
-# ลบ ZIP เก่าก่อน
-if (Test-Path $zipPath) {
+if (Test-Path -LiteralPath $zipPath) {
+
     Remove-Item `
-        -Path $zipPath `
+        -LiteralPath $zipPath `
         -Force `
         -ErrorAction SilentlyContinue
 }
 
-Invoke-WebRequest `
-    -Uri $zipUrl `
-    -OutFile $zipPath `
-    -UseBasicParsing
+try {
+
+    Invoke-WebRequest `
+        -Uri $zipUrl `
+        -OutFile $zipPath `
+        -UseBasicParsing `
+        -ErrorAction Stop
+}
+catch {
+
+    Write-Host `
+        ">> Download failed." `
+        -ForegroundColor Red
+
+    Write-Host $_.Exception.Message `
+        -ForegroundColor DarkRed
+
+    exit 1
+}
 
 
 # ==========================================================
@@ -243,105 +342,203 @@ Write-Host `
     ">> Extracting files..." `
     -ForegroundColor Cyan
 
-$extractDir = "$env:TEMP\redpro_extract"
+$extractDir = Join-Path `
+    $env:TEMP `
+    "redpro_extract"
 
-if (Test-Path $extractDir) {
+if (Test-Path -LiteralPath $extractDir) {
 
     Remove-Item `
+        -LiteralPath $extractDir `
+        -Recurse `
+        -Force `
+        -ErrorAction SilentlyContinue
+}
+
+try {
+
+    New-Item `
+        -ItemType Directory `
         -Path $extractDir `
-        -Recurse `
-        -Force `
-        -ErrorAction SilentlyContinue
+        -Force | Out-Null
+
+    Add-Type `
+        -AssemblyName System.IO.Compression.FileSystem
+
+    [System.IO.Compression.ZipFile]::ExtractToDirectory(
+        $zipPath,
+        $extractDir
+    )
 }
+catch {
 
-Add-Type `
-    -AssemblyName System.IO.Compression.FileSystem
+    Write-Host `
+        ">> Extraction failed." `
+        -ForegroundColor Red
 
-[System.IO.Compression.ZipFile]::ExtractToDirectory(
-    $zipPath,
-    $extractDir
-)
+    Write-Host $_.Exception.Message `
+        -ForegroundColor DarkRed
 
-
-# ==========================================================
-# ลบ Version เก่า
-# ==========================================================
-
-if (Test-Path $targetDir) {
-
-    # เอา Hidden/System ออกก่อนลบ
-    # ป้องกันบางกรณีที่ไฟล์เดิมลบไม่หมด
-
-    & attrib.exe -h -s "$targetDir" 2>$null
-    & attrib.exe -h -s "$targetDir\*" /s /d 2>$null
-
-    Remove-Item `
-        -Path $targetDir `
-        -Recurse `
-        -Force `
-        -ErrorAction SilentlyContinue
+    exit 1
 }
 
 
 # ==========================================================
-# ย้าย Version ใหม่
+# Remove old installation
+# ==========================================================
+
+if (Test-Path -LiteralPath $targetDir) {
+
+    Unhide-RedproFiles
+
+    try {
+
+        Remove-Item `
+            -LiteralPath $targetDir `
+            -Recurse `
+            -Force `
+            -ErrorAction Stop
+    }
+    catch {
+
+        Write-Host `
+            ">> Could not remove old installation." `
+            -ForegroundColor Red
+
+        Write-Host $_.Exception.Message `
+            -ForegroundColor DarkRed
+
+        exit 1
+    }
+}
+
+
+# ==========================================================
+# Locate extracted GitHub folder
 # ==========================================================
 
 $extractedFolder = Join-Path `
     $extractDir `
     "$repoName-main"
 
-Move-Item `
-    -Path $extractedFolder `
-    -Destination $targetDir `
-    -Force
+if (-not (Test-Path -LiteralPath $extractedFolder)) {
+
+    $possibleFolder = Get-ChildItem `
+        -LiteralPath $extractDir `
+        -Directory |
+        Select-Object -First 1
+
+    if ($null -ne $possibleFolder) {
+
+        $extractedFolder = $possibleFolder.FullName
+    }
+}
+
+
+if (-not (Test-Path -LiteralPath $extractedFolder)) {
+
+    Write-Host `
+        ">> Extracted program folder was not found." `
+        -ForegroundColor Red
+
+    exit 1
+}
 
 
 # ==========================================================
-# ล้างไฟล์ชั่วคราว
+# Move new version
+# ==========================================================
+
+try {
+
+    Move-Item `
+        -LiteralPath $extractedFolder `
+        -Destination $targetDir `
+        -Force `
+        -ErrorAction Stop
+}
+catch {
+
+    Write-Host `
+        ">> Installation failed while moving files." `
+        -ForegroundColor Red
+
+    Write-Host $_.Exception.Message `
+        -ForegroundColor DarkRed
+
+    exit 1
+}
+
+
+# ==========================================================
+# Cleanup temp files
 # ==========================================================
 
 Remove-Item `
-    -Path $zipPath `
+    -LiteralPath $zipPath `
     -Force `
     -ErrorAction SilentlyContinue
 
 Remove-Item `
-    -Path $extractDir `
+    -LiteralPath $extractDir `
     -Recurse `
     -Force `
     -ErrorAction SilentlyContinue
 
 
 # ==========================================================
-# 5. Unblock
+# 5. Unblock files
 # ==========================================================
 
-Get-ChildItem `
-    -Path $targetDir `
-    -Recurse `
-    -Force `
-    -ErrorAction SilentlyContinue |
-    Unblock-File `
-        -ErrorAction SilentlyContinue
+try {
+
+    Get-ChildItem `
+        -LiteralPath $targetDir `
+        -Recurse `
+        -Force `
+        -File `
+        -ErrorAction SilentlyContinue |
+    ForEach-Object {
+
+        Unblock-File `
+            -LiteralPath $_.FullName `
+            -ErrorAction SilentlyContinue
+    }
+}
+catch {
+}
 
 
 # ==========================================================
-# 6. ซ่อนโปรแกรมด้วย attrib +h +s
+# Check application file
+# ==========================================================
+
+if (-not (Test-Path -LiteralPath $appFile)) {
+
+    Write-Host `
+        ">> Installation completed, but RedproV2.ps1 was not found." `
+        -ForegroundColor Red
+
+    exit 1
+}
+
+
+# ==========================================================
+# 6. Hide folder/files with attrib +h +s
 # ==========================================================
 
 Hide-RedproFiles
 
 
 # ==========================================================
-# 7. สร้าง Desktop Shortcut
+# 7. Create Desktop Shortcut
 # ==========================================================
 
 Ensure-DesktopShortcut
 
 
 # ==========================================================
-# 8. เปิดโปรแกรม
+# 8. Launch application
 # ==========================================================
 
 Start-RedproApp
