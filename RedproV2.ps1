@@ -1,4 +1,4 @@
-﻿# Auto-Elevate to Administrator
+# Auto-Elevate to Administrator
 if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     $scriptPath = if ($PSCommandPath) { $PSCommandPath } else { $MyInvocation.MyCommand.Path }
     if ($scriptPath) {
@@ -439,7 +439,7 @@ if (Test-Path $bannerPath) {
     } catch {}
 }
 
-$sidebarPath = Join-Path $scriptDir "IMG_6322.jpg"
+$sidebarPath = Join-Path $scriptDir "ddd.jpg"
 if (Test-Path $sidebarPath) {
     try {
         $img = New-Object System.Windows.Media.Imaging.BitmapImage(New-Object Uri($sidebarPath))
